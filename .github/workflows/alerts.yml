@@ -11,7 +11,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pandas numpy requests
+      - run: pip install pandas numpy requests websocket-client
       - run: python alert_bot.py ${{ github.event_name == 'workflow_dispatch' && 'status' || 'alert' }}
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
