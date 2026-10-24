@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Forex signal ALERTS to Telegram for several pairs. It never trades and needs no broker login.
+Forex signal ALERTS to Telegram for several pairs plus Deriv Step Index.
+It never trades and needs no broker login.
 
-Strategy (same as forex_ma_bot.py): 1h candles, EMA 30/100 crossover, ATR-based stop/target.
+Strategy: 1h candles, EMA 30/100 crossover, ATR-based stop/target.
 
 Usage:  python alert_bot.py alert    (message only for pairs with a NEW crossover)
         python alert_bot.py status   (one message with the current trend of every pair)
@@ -10,6 +11,7 @@ Usage:  python alert_bot.py alert    (message only for pairs with a NEW crossove
 
 Needs env vars TELEGRAM_TOKEN and TELEGRAM_CHAT_ID. Not financial advice.
 """
+import json
 import os
 import sys
 import time
@@ -17,9 +19,13 @@ import time
 import pandas as pd
 import requests
 
-PAIRS = ["EUR_USD", "GBP_USD", "USD_JPY", "AUD_USD", "USD_CAD", "EUR_JPY"]
+PAIRS = ["EUR_USD", "GBP_USD", "USD_JPY", "AUD_USD", "USD_CAD", "EUR_JPY", "STEP"]
 FAST, SLOW, ATR_N, SL_ATR, TP_ATR = 30, 100, 14, 3.0, 6.0
 MAX_AGE_MIN = 90   # ignore stale candles (market closed / weekend)
+
+# Deriv synthetic markets: key -> (Deriv symbol, display name)
+DERIV = {"STEP": ("stpRNG", "Step Index")}
+DERIV_URL = "wss://ws.derivws.com/websockets/v3?app_id=1089"
 
 
 def telegram(text):
@@ -30,7 +36,32 @@ def telegram(text):
     print("Telegram message sent.")
 
 
+def closed_only(df):
+    now = pd.Timestamp.now("UTC").tz_localize(None)
+    df = df[df["time"] + pd.Timedelta(hours=1) <= now].reset_index(drop=True)  # closed candles only
+    return df, now
+
+
+def deriv_candles(symbol):
+    import websocket   # pip package: websocket-client
+    ws = websocket.create_connection(DERIV_URL, timeout=30)
+    try:
+        ws.send(json.dumps({"ticks_history": symbol, "adjust_start_time": 1, "count": 500,
+                            "end": "latest", "granularity": 3600, "style": "candles"}))
+        data = json.loads(ws.recv())
+    finally:
+        ws.close()
+    if "error" in data:
+        raise RuntimeError(data["error"]["message"])
+    df = pd.DataFrame(data["candles"])
+    df["time"] = pd.to_datetime(df["epoch"], unit="s")
+    df = df[["time", "open", "high", "low", "close"]].dropna()
+    return closed_only(df)
+
+
 def candles(pair):
+    if pair in DERIV:
+        return deriv_candles(DERIV[pair][0])
     symbol = pair.replace("_", "") + "=X"
     r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
                      params=dict(interval="1h", range="60d"),
@@ -40,9 +71,7 @@ def candles(pair):
     q = res["indicators"]["quote"][0]
     df = pd.DataFrame({"time": pd.to_datetime(res["timestamp"], unit="s"),
                        **{k: q[k] for k in ("open", "high", "low", "close")}}).dropna()
-    now = pd.Timestamp.now("UTC").tz_localize(None)
-    df = df[df["time"] + pd.Timedelta(hours=1) <= now].reset_index(drop=True)  # closed candles only
-    return df, now
+    return closed_only(df)
 
 
 def indicators(df):
@@ -61,7 +90,10 @@ def indicators(df):
 
 def check(pair, mode):
     """Return a message string (or None if there is nothing to report)."""
-    name, dg = pair.replace("_", "/"), (3 if "JPY" in pair else 5)
+    if pair in DERIV:
+        name, dg = DERIV[pair][1], 2
+    else:
+        name, dg = pair.replace("_", "/"), (3 if "JPY" in pair else 5)
     df, now = candles(pair)
     df = indicators(df)
     last = df.iloc[-1]
