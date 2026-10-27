@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Forex signal ALERTS to Telegram for several pairs plus Deriv Step Index.
+Forex signal ALERTS to Telegram for several pairs, Gold, plus Deriv Step Index.
 It never trades and needs no broker login.
 
 Strategy: 1h candles, EMA 30/100 crossover, ATR-based stop/target.
@@ -19,13 +19,16 @@ import time
 import pandas as pd
 import requests
 
-PAIRS = ["EUR_USD", "GBP_USD", "USD_JPY", "AUD_USD", "USD_CAD", "EUR_JPY", "STEP"]
+PAIRS = ["EUR_USD", "GBP_USD", "USD_JPY", "AUD_USD", "USD_CAD", "EUR_JPY", "GOLD", "STEP"]
 FAST, SLOW, ATR_N, SL_ATR, TP_ATR = 30, 100, 14, 3.0, 6.0
 MAX_AGE_MIN = 90   # ignore stale candles (market closed / weekend)
 
 # Deriv synthetic markets: key -> (Deriv symbol, display name)
 DERIV = {"STEP": ("stpRNG", "Step Index")}
 DERIV_URL = "wss://api.derivws.com/trading/v1/options/ws/public"
+
+# Other Yahoo symbols: key -> (Yahoo symbol, display name)
+YAHOO = {"GOLD": ("GC=F", "Gold (XAU/USD)")}
 
 
 def telegram(text):
@@ -62,7 +65,7 @@ def deriv_candles(symbol):
 def candles(pair):
     if pair in DERIV:
         return deriv_candles(DERIV[pair][0])
-    symbol = pair.replace("_", "") + "=X"
+    symbol = YAHOO[pair][0] if pair in YAHOO else pair.replace("_", "") + "=X"
     r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
                      params=dict(interval="1h", range="60d"),
                      headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
@@ -92,6 +95,8 @@ def check(pair, mode):
     """Return a message string (or None if there is nothing to report)."""
     if pair in DERIV:
         name, dg = DERIV[pair][1], 2
+    elif pair in YAHOO:
+        name, dg = YAHOO[pair][1], 2
     else:
         name, dg = pair.replace("_", "/"), (3 if "JPY" in pair else 5)
     df, now = candles(pair)
