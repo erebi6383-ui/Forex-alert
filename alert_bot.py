@@ -19,7 +19,7 @@ import time
 import pandas as pd
 import requests
 
-PAIRS = ["EUR_USD", "GBP_USD", "USD_JPY", "AUD_USD", "USD_CAD", "EUR_JPY", "GOLD", "STEP"]
+PAIRS =["EUR_USD", "GOLD"]
 FAST, SLOW, ATR_N, SL_ATR, TP_ATR = 30, 100, 14, 3.0, 6.0
 MAX_AGE_MIN = 90   # ignore stale candles (market closed / weekend)
 
