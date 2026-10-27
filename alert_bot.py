@@ -25,7 +25,7 @@ MAX_AGE_MIN = 90   # ignore stale candles (market closed / weekend)
 
 # Deriv synthetic markets: key -> (Deriv symbol, display name)
 DERIV = {"STEP": ("stpRNG", "Step Index")}
-DERIV_URL = "wss://ws.derivws.com/websockets/v3?app_id=1089"
+DERIV_URL = "wss://api.derivws.com/trading/v1/options/ws/public"
 
 
 def telegram(text):
