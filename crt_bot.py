@@ -6,6 +6,7 @@ Rules (simplified, mechanical):
 3. Confirm     = on M15, a close that breaks the recent 12-candle high (buy)
                  or low (sell) = break of structure (BOS), after the sweep
 4. SL beyond the sweep wick, TP1 = 50% of range, TP2 = other side of range
+5. Skip the setup if RR to TP2 is below MIN_RR
 """
 import os
 import pandas as pd
@@ -16,6 +17,7 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT = os.environ.get("TELEGRAM_CHAT_ID")
 LOOKBACK = 12      # M15 candles used to define structure
 SCAN = 4           # only alert on BOS within the last 4 closed M15 candles
+MIN_RR = 1.0       # minimum reward-to-risk to TP2
 
 
 def get(sym, interval, period):
@@ -69,9 +71,13 @@ def check(name, sym):
             tp1, tp2 = c1.High - 0.5 * rng, c1.Low
         else:
             continue
-        risk, reward = abs(close - sl), abs(tp1 - close)
+        risk = abs(close - sl)
+        reward1 = abs(tp1 - close)
+        reward2 = abs(tp2 - close)
         if (side == "BUY" and tp1 <= close) or (side == "SELL" and tp1 >= close):
             return None   # price already past TP1
+        if risk == 0 or reward2 / risk < MIN_RR:
+            return None   # not enough room to TP2
         d = 3 if close < 1000 else 2
         return (f"CRT+SMC {side} - {name}\n"
                 f"Time: {m.index[i]:%Y-%m-%d %H:%M} UTC\n"
@@ -80,7 +86,8 @@ def check(name, sym):
                 f"SL: {sl:.{d}f}\n"
                 f"TP1 (50%): {tp1:.{d}f}\n"
                 f"TP2: {tp2:.{d}f}\n"
-                f"RR to TP1: {reward / risk:.1f}\n"
+                f"RR to TP1: {reward1 / risk:.1f}\n"
+                f"RR to TP2: {reward2 / risk:.1f}\n"
                 f"FVG: {'yes' if fvg else 'no'}")
     return None
 
