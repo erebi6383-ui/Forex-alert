@@ -8,10 +8,13 @@ the 0.5-0.618 zone, and alert when the candle closes back in trend direction.
 import json, os, urllib.request, urllib.parse
 
 PAIRS = {"EUR/USD": "EURUSD=X", "Gold": "GC=F"}
-INTERVAL, RANGE = "1h", "30d"
-SWING = 5          # candles each side to confirm a swing point
-MIN_RR = 1.0       # minimum risk-reward to TP1
-ZONE = (0.5, 0.618)
+INTERVAL, RANGE = "1h", "60d"
+# Per-pair settings picked from the backtest (swing size, retracement zone,
+# minimum risk-reward, which target the RR is measured to).
+SETTINGS = {
+    "EUR/USD": {"swing": 3, "zone": (0.5, 0.786), "min_rr": 1.5, "tp": "tp1"},
+    "Gold":    {"swing": 5, "zone": (0.5, 0.618), "min_rr": 1.0, "tp": "tp2"},
+}
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -31,7 +34,7 @@ def get_candles(symbol):
     return rows
 
 
-def swings(c):
+def swings(c, SWING):
     """Return list of (index, 'H'/'L', price) confirmed swing points."""
     out = []
     for i in range(SWING, len(c) - SWING):
@@ -45,7 +48,9 @@ def swings(c):
 
 
 def analyse(name, c):
-    sw = swings(c)
+    cfg = SETTINGS[name]
+    ZONE, MIN_RR = cfg["zone"], cfg["min_rr"]
+    sw = swings(c, cfg["swing"])
     if len(sw) < 2:
         return None
     (i1, t1, p1), (i2, t2, p2) = sw[-2], sw[-1]
@@ -78,13 +83,15 @@ def analyse(name, c):
     if not touched:
         return None
     risk = abs(entry - sl)
-    rr = abs(tp1 - entry) / risk if risk else 0
+    target = tp1 if cfg["tp"] == "tp1" else tp2
+    rr = abs(target - entry) / risk if risk else 0
     if rr < MIN_RR:
         return None
     d = 5 if name == "EUR/USD" else 2
     return (f"FIB {side} {name} ({INTERVAL})\n"
             f"Entry: {entry:.{d}f}\nStop: {sl:.{d}f}\n"
-            f"TP1: {tp1:.{d}f}\nTP2: {tp2:.{d}f}\nRR to TP1: {rr:.2f}")
+            f"TP1: {tp1:.{d}f}\nTP2: {tp2:.{d}f}\n"
+            f"Main target: {cfg['tp'].upper()} | RR: {rr:.2f}")
 
 
 def send(text):
@@ -115,4 +122,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-  
+    
